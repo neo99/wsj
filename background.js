@@ -232,19 +232,14 @@ function contentScript_parsePrintEdition() {
    * Update ARTICLE_URL_RE below if WSJ changes their URL structure.
    */
 
-  const ARTICLE_URL_RE = /wsj\.com\/(articles|business|finance|economy|tech|politics|world|us|lifestyle|style|arts|sports|real-estate|personal-finance)\//;
-
-  // We navigate directly to the section URL, so the whole page is
-  // Business & Finance. Filter to links with mod=itp_wsj, which is the
-  // tracking param WSJ adds to print-edition article links (sidebar/popular
-  // links use different params and would otherwise pollute the list).
-  const links = document.querySelectorAll("a[href]");
+  // Each article card has an <a data-testid="flexcard-headline"> link.
+  // This is the most precise selector — it captures exactly the headline
+  // links and nothing else (image links, nav links, sidebar links).
+  const links = document.querySelectorAll('a[data-testid="flexcard-headline"]');
   const out = [];
   const seen = new Set();
   for (const a of links) {
     const href = a.href;
-    if (!ARTICLE_URL_RE.test(href)) continue;
-    if (!href.includes("mod=itp_wsj")) continue;
     const url = href.split("?")[0]; // strip tracking params for dedup
     if (seen.has(url)) continue;
     seen.add(url);
