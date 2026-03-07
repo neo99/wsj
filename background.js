@@ -56,51 +56,24 @@ async function startQueue() {
   cancelled = false;
   state = emptyState();
   state.phase = "fetching";
-  state.statusText = "Opening today\u2019s print edition\u2026";
+  state.statusText = "Opening article\u2026";
   push();
+
+  // DEBUG: single article mode
+  const DEBUG_ARTICLE = {
+    title: "Ford Issues Recall Over Rearview Camera Errors",
+    url: "https://www.wsj.com/business/autos/ford-issues-recall-over-rearview-camera-errors-18454972",
+  };
 
   let tabId;
   try {
-    // 1. Open print edition page
-    const tab = await chrome.tabs.create({
-      url: "https://www.wsj.com/print-edition/today",
-      active: false,
-    });
+    const articles = [DEBUG_ARTICLE];
+
+    // Open tab to the article directly
+    const tab = await chrome.tabs.create({ url: articles[0].url, active: true });
     tabId = tab.id;
     await waitForLoad(tabId);
     await sleep(3000); // let JS hydrate
-
-    // 2. Parse Business & Finance articles
-    state.statusText = "Scanning for Business & Finance articles\u2026";
-    push();
-
-    const [parseResult] = await chrome.scripting.executeScript({
-      target: { tabId },
-      func: contentScript_parsePrintEdition,
-    });
-
-    const parsed = parseResult.result;
-
-    if (parsed.error) {
-      state.phase = "error";
-      state.statusText = parsed.error;
-      if (parsed.sections?.length) {
-        state.statusText += "\nSections found on page: " + parsed.sections.join(", ");
-      }
-      push();
-      // DEBUG: await chrome.tabs.remove(tabId);
-      return;
-    }
-
-    const articles = deduplicateArticles(parsed.articles);
-
-    if (articles.length === 0) {
-      state.phase = "error";
-      state.statusText = "No articles found in the Business & Finance section.";
-      push();
-      // DEBUG: await chrome.tabs.remove(tabId);
-      return;
-    }
 
     // Populate state with articles
     state.articles = articles.map((a) => ({
