@@ -61,11 +61,17 @@ async function startQueue() {
 
   let tabId;
   try {
-    // 1. Open print edition page
-    const tab = await chrome.tabs.create({
-      url: "https://www.wsj.com/print-edition/today",
-      active: false,
-    });
+    // 1. Open Business & Finance section directly
+    const today = new Date();
+    const dateStr = today.getFullYear().toString() +
+      String(today.getMonth() + 1).padStart(2, "0") +
+      String(today.getDate()).padStart(2, "0");
+    const printUrl = `https://www.wsj.com/print-edition/${dateStr}/business-and-finance`;
+
+    state.statusText = "Opening Business & Finance section\u2026";
+    push();
+
+    const tab = await chrome.tabs.create({ url: printUrl, active: false });
     tabId = tab.id;
     await waitForLoad(tabId);
     await sleep(3000); // let JS hydrate
