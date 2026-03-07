@@ -353,21 +353,30 @@ function contentScript_clickAudio() {
     '[class*="add-to-queue"]',
   ];
 
-  // The audio widget loads asynchronously — keep trying until it appears.
-  // Do NOT fall back to the "Listen" button: that plays audio, not queue.
+  // Step 1: If the audio queue button is already in the DOM, click it.
   console.log('[WSJ] contentScript_clickAudio attempt, button.audio-queue-button found:', !!document.querySelector('button.audio-queue-button'));
   for (const sel of QUEUE_SELECTORS) {
     try {
       const el = document.querySelector(sel);
       if (el) {
         el.click();
-        console.log('[WSJ] clicked:', sel);
+        console.log('[WSJ] clicked queue button:', sel);
         return { success: true, method: "queue-selector", selector: sel };
       }
     } catch {}
   }
 
-  return { success: false, error: "Audio button not found" };
+  // Step 2: Audio widget not loaded yet — click "More Options" to trigger it,
+  // then return false so the retry loop tries again after a delay.
+  const moreOptions = document.querySelector('button[aria-label="More Options"]');
+  if (moreOptions) {
+    moreOptions.click();
+    console.log('[WSJ] clicked More Options, waiting for audio widget...');
+    return { success: false, error: "Clicked More Options, retry needed" };
+  }
+
+  console.log('[WSJ] More Options button not found either');
+  return { success: false, error: "Neither queue button nor More Options found" };
 
   function isVisible(el) {
     const r = el.getBoundingClientRect();
