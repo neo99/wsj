@@ -235,15 +235,19 @@ function contentScript_parsePrintEdition() {
   const ARTICLE_URL_RE = /wsj\.com\/(articles|business|finance|economy|tech|politics|world|us|lifestyle|style|arts|sports|real-estate|personal-finance)\//;
 
   // We navigate directly to the section URL, so the whole page is
-  // Business & Finance — just extract all article links from the body.
+  // Business & Finance. Filter to links with mod=itp_wsj, which is the
+  // tracking param WSJ adds to print-edition article links (sidebar/popular
+  // links use different params and would otherwise pollute the list).
   const links = document.querySelectorAll("a[href]");
   const out = [];
   const seen = new Set();
   for (const a of links) {
     const href = a.href;
     if (!ARTICLE_URL_RE.test(href)) continue;
-    if (seen.has(href)) continue;
-    seen.add(href);
+    if (!href.includes("mod=itp_wsj")) continue;
+    const url = href.split("?")[0]; // strip tracking params for dedup
+    if (seen.has(url)) continue;
+    seen.add(url);
     const title = a.textContent.trim().replace(/\s+/g, " ");
     if (title.length < 5 || title.length > 400) continue;
     out.push({ title, url: href });
