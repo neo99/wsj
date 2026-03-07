@@ -20,9 +20,9 @@ After any code change, click the reload icon on the extension card at `chrome://
 The extension has two runtime contexts that communicate via a long-lived port named `"popup"`:
 
 **`background.js` (service worker)** — all orchestration logic lives here:
-- Opens a hidden tab to `wsj.com/print-edition/today`
-- Injects `contentScript_parsePrintEdition()` to find Business & Finance article links using three strategies: embedded JSON, DOM heading + container traversal, and between-headings range fallback
-- Navigates the same tab to each article URL and injects `contentScript_clickAudio()` to find and click the Listen button
+- Opens a hidden tab directly to `wsj.com/print-edition/YYYYMMDD/business-and-finance` (date is constructed at runtime)
+- Injects `contentScript_parsePrintEdition()` to collect all article links using the `a[data-testid="flexcard-headline"]` selector — no section-heading search needed since the whole page is the B&F section
+- Navigates the same tab to each article URL and injects `contentScript_clickAudio()` which: (1) clicks the "More Options" button (`aria-label="More Options"`) to expose the audio widget, then (2) clicks `button.audio-queue-button` on the next retry
 - Maintains a `state` object (`phase`, `statusText`, `articles[]`, `queued`) and pushes it to the popup on every change
 
 **`popup.js` / `popup.html` / `popup.css`** — thin UI layer:
@@ -33,7 +33,7 @@ The extension has two runtime contexts that communicate via a long-lived port na
 ## Key Maintenance Points
 
 **If WSJ changes their DOM**, update the selectors at the top of the two injected content script functions inside `background.js`:
-- `contentScript_parsePrintEdition`: `ARTICLE_URL_RE` and `SECTION_RE` constants, and the selector strings in the DOM-walking strategies
-- `contentScript_clickAudio`: the `SELECTORS` array (priority-ordered CSS selectors for the Listen button)
+- `contentScript_parsePrintEdition`: the `a[data-testid="flexcard-headline"]` selector used to find article headline links
+- `contentScript_clickAudio`: the `button[aria-label="More Options"]` selector for the toolbar button, and `button.audio-queue-button` / `QUEUE_SELECTORS` for the queue button
 
 The content script functions are defined as named functions in `background.js` and passed by reference to `chrome.scripting.executeScript`. They run in the page context, so they cannot close over any variables from the service worker scope.
