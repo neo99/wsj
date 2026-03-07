@@ -107,7 +107,7 @@ async function startQueue() {
         await waitForLoad(tabId);
         await sleep(2500); // let article page hydrate
 
-        const ok = await tryClickAudio(tabId, 4);
+        const ok = await tryClickAudio(tabId, 8);
 
         if (ok) {
           state.articles[i].status = "success";
@@ -149,7 +149,7 @@ async function tryClickAudio(tabId, maxAttempts) {
       func: contentScript_clickAudio,
     });
     if (result.result?.success) return true;
-    await sleep(1500);
+    await sleep(2000);
   }
   return false;
 }
@@ -353,122 +353,18 @@ function contentScript_clickAudio() {
     '[class*="add-to-queue"]',
   ];
 
-  // CSS selectors for the 3-dot / more-options button that opens the dropdown
-  const THREE_DOT_SELECTORS = [
-    'button[aria-label*="more options" i]',
-    'button[aria-label*="more actions" i]',
-    'button[aria-label*="share and save" i]',
-    '[data-testid*="more-options" i]',
-    '[data-testid*="toolbar-more" i]',
-    '[class*="MoreOptions"]',
-    '[class*="moreOptions"]',
-    '[class*="more-options"]',
-    '[class*="toolbar__more"]',
-  ];
-
-  // Priority-ordered CSS selectors for a standalone audio/listen button
-  const AUDIO_SELECTORS = [
-    'button[aria-label*="listen" i]',
-    'button[aria-label*="audio" i]',
-    '[data-testid*="listen" i]',
-    '[data-testid*="audio" i]',
-    '[class*="AudioButton"]',
-    '[class*="audioButton"]',
-    '[class*="ListenButton"]',
-    '[class*="listenButton"]',
-    '[class*="audio-btn"]',
-    '[class*="listen-btn"]',
-    '[class*="text-to-speech"]',
-    '[class*="AudioPlayButton"]',
-    '[class*="snippet__audio"]',
-  ];
-
-  // Strategy 0: "Add to my Queue" button — check directly without visibility
-  // requirement since the audio widget uses tabindex="-1" and portal rendering
-  // which can give zero bounding rect even when functional.
-  console.log('[WSJ] contentScript_clickAudio running, URL:', location.href);
-  console.log('[WSJ] button.audio-queue-button found:', !!document.querySelector('button.audio-queue-button'));
-  console.log('[WSJ] All buttons:', [...document.querySelectorAll('button')].map(b => b.className + ' | ' + b.getAttribute('aria-label')));
+  // The audio widget loads asynchronously — keep trying until it appears.
+  // Do NOT fall back to the "Listen" button: that plays audio, not queue.
+  console.log('[WSJ] contentScript_clickAudio attempt, button.audio-queue-button found:', !!document.querySelector('button.audio-queue-button'));
   for (const sel of QUEUE_SELECTORS) {
     try {
       const el = document.querySelector(sel);
-      console.log('[WSJ] selector', sel, '->', el ? 'FOUND' : 'not found');
       if (el) {
         el.click();
+        console.log('[WSJ] clicked:', sel);
         return { success: true, method: "queue-selector", selector: sel };
       }
     } catch {}
-  }
-
-  // Strategy 1: Direct CSS selectors for standalone audio button
-  for (const sel of AUDIO_SELECTORS) {
-    try {
-      const el = document.querySelector(sel);
-      if (el && isVisible(el)) {
-        el.click();
-        return { success: true, method: "audio-selector", selector: sel };
-      }
-    } catch {}
-  }
-
-  // Strategy 2: Text content scan on buttons
-  {
-    const buttons = document.querySelectorAll('button, [role="button"], a[class*="btn"], a[class*="Btn"]');
-    for (const btn of buttons) {
-      const text = btn.textContent.trim().toLowerCase();
-      if (
-        (text.includes("listen") && text.length < 40) ||
-        text === "audio" ||
-        text === "play"
-      ) {
-        if (isVisible(btn)) {
-          btn.click();
-          return { success: true, method: "text", text };
-        }
-      }
-    }
-  }
-
-  // Strategy 3: SVG icon with headphones/listen label
-  {
-    const svgs = document.querySelectorAll("svg");
-    for (const svg of svgs) {
-      const parent = svg.closest("button, [role='button'], a");
-      if (!parent || !isVisible(parent)) continue;
-      const label = (parent.getAttribute("aria-label") || "").toLowerCase();
-      const title = svg.querySelector("title")?.textContent?.toLowerCase() || "";
-      if (label.includes("listen") || label.includes("audio") ||
-          title.includes("listen") || title.includes("audio") ||
-          title.includes("headphone")) {
-        parent.click();
-        return { success: true, method: "svg-icon" };
-      }
-    }
-  }
-
-  // Strategy 4: Open the 3-dot menu so the next retry can find "Add to my Queue"
-  for (const sel of THREE_DOT_SELECTORS) {
-    try {
-      const el = document.querySelector(sel);
-      if (el && isVisible(el)) {
-        el.click();
-        return { success: false, error: "Opened 3-dot menu, retry needed", openedMenu: true };
-      }
-    } catch {}
-  }
-
-  // Also try finding the 3-dot button by its text/aria content
-  {
-    const buttons = document.querySelectorAll('button, [role="button"]');
-    for (const btn of buttons) {
-      const label = (btn.getAttribute("aria-label") || btn.textContent || "").trim().toLowerCase();
-      if (label === "..." || label === "⋮" || label === "•••") {
-        if (isVisible(btn)) {
-          btn.click();
-          return { success: false, error: "Opened 3-dot menu (by symbol), retry needed", openedMenu: true };
-        }
-      }
-    }
   }
 
   return { success: false, error: "Audio button not found" };
