@@ -56,24 +56,51 @@ async function startQueue() {
   cancelled = false;
   state = emptyState();
   state.phase = "fetching";
-  state.statusText = "Opening article\u2026";
+  state.statusText = "Opening today\u2019s print edition\u2026";
   push();
-
-  // DEBUG: single article mode
-  const DEBUG_ARTICLE = {
-    title: "Ford Issues Recall Over Rearview Camera Errors",
-    url: "https://www.wsj.com/business/autos/ford-issues-recall-over-rearview-camera-errors-18454972",
-  };
 
   let tabId;
   try {
-    const articles = [DEBUG_ARTICLE];
-
-    // Open tab to the article directly
-    const tab = await chrome.tabs.create({ url: articles[0].url, active: true });
+    // 1. Open print edition page
+    const tab = await chrome.tabs.create({
+      url: "https://www.wsj.com/print-edition/today",
+      active: false,
+    });
     tabId = tab.id;
     await waitForLoad(tabId);
     await sleep(3000); // let JS hydrate
+
+    // 2. Parse Business & Finance articles
+    state.statusText = "Scanning for Business & Finance articles\u2026";
+    push();
+
+    const [parseResult] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: contentScript_parsePrintEdition,
+    });
+
+    const parsed = parseResult.result;
+
+    if (parsed.error) {
+      state.phase = "error";
+      state.statusText = parsed.error;
+      if (parsed.sections?.length) {
+        state.statusText += "\nSections found on page: " + parsed.sections.join(", ");
+      }
+      push();
+      await chrome.tabs.remove(tabId);
+      return;
+    }
+
+    const articles = deduplicateArticles(parsed.articles);
+
+    if (articles.length === 0) {
+      state.phase = "error";
+      state.statusText = "No articles found in the Business & Finance section.";
+      push();
+      await chrome.tabs.remove(tabId);
+      return;
+    }
 
     // Populate state with articles
     state.articles = articles.map((a) => ({
@@ -94,7 +121,7 @@ async function startQueue() {
         state.phase = "done";
         state.queued = queued;
         push();
-        // DEBUG: await chrome.tabs.remove(tabId);
+        await chrome.tabs.remove(tabId);
         return;
       }
 
@@ -132,12 +159,12 @@ async function startQueue() {
     state.statusText = `Done — ${queued} of ${articles.length} articles queued.`;
     push();
 
-    // DEBUG: await chrome.tabs.remove(tabId);
+    await chrome.tabs.remove(tabId);
   } catch (err) {
     state.phase = "error";
     state.statusText = "Unexpected error: " + err.message;
     push();
-    // DEBUG: try { if (tabId) await chrome.tabs.remove(tabId); } catch {}
+    try { if (tabId) await chrome.tabs.remove(tabId); } catch {}
   }
 }
 
@@ -354,28 +381,24 @@ function contentScript_clickAudio() {
   ];
 
   // Step 1: If the audio queue button is already in the DOM, click it.
-  console.log('[WSJ] contentScript_clickAudio attempt, button.audio-queue-button found:', !!document.querySelector('button.audio-queue-button'));
   for (const sel of QUEUE_SELECTORS) {
     try {
       const el = document.querySelector(sel);
       if (el) {
         el.click();
-        console.log('[WSJ] clicked queue button:', sel);
         return { success: true, method: "queue-selector", selector: sel };
       }
     } catch {}
   }
 
-  // Step 2: Audio widget not loaded yet — click "More Options" to trigger it,
+  // Step 2: Audio widget not loaded yet — click "More Options" to expose it,
   // then return false so the retry loop tries again after a delay.
   const moreOptions = document.querySelector('button[aria-label="More Options"]');
   if (moreOptions) {
     moreOptions.click();
-    console.log('[WSJ] clicked More Options, waiting for audio widget...');
     return { success: false, error: "Clicked More Options, retry needed" };
   }
 
-  console.log('[WSJ] More Options button not found either');
   return { success: false, error: "Neither queue button nor More Options found" };
 
   function isVisible(el) {
