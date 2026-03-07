@@ -226,135 +226,29 @@ function deduplicateArticles(articles) {
 // ---------------------------------------------------------------------------
 function contentScript_parsePrintEdition() {
   /*
-   * This runs inside the wsj.com/print-edition/today page.
-   *
-   * Strategy:
-   *   A) Look for embedded JSON state that might contain section/article data.
-   *   B) DOM: find a heading whose text matches "Business & Finance" (case-
-   *      insensitive), then walk up to the nearest section-like container and
-   *      collect all <a> links that look like article URLs.
-   *   C) Fallback: find the heading, then collect all sibling-level links
-   *      until we hit the next section heading.
+   * This runs inside the wsj.com/print-edition/YYYYMMDD/business-and-finance page.
+   * The whole page is the Business & Finance section, so we just collect all
+   * <a> links whose href matches known WSJ article URL patterns.
+   * Update ARTICLE_URL_RE below if WSJ changes their URL structure.
    */
 
   const ARTICLE_URL_RE = /wsj\.com\/(articles|business|finance|economy|tech|politics|world|us|lifestyle|style|arts|sports|real-estate|personal-finance)\//;
-  const SECTION_RE     = /business\s*[&+]\s*finance|business\s+and\s+finance/i;
 
-  console.log('[WSJ] parsePrintEdition running, URL:', location.href);
-  console.log('[WSJ] all headings:', [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => h.textContent.trim()).filter(t => t.length > 2 && t.length < 120));
-  console.log('[WSJ] all links count:', document.querySelectorAll('a[href]').length);
-
-  // ---- Strategy A: embedded JSON ----
-  try {
-    const scripts = document.querySelectorAll('script[type="application/json"], script:not([src])');
-    for (const s of scripts) {
-      const txt = s.textContent;
-      if (!txt || txt.length < 200 || !SECTION_RE.test(txt)) continue;
-      try {
-        const json = JSON.parse(txt);
-        const found = findArticlesInJson(json);
-        if (found.length > 0) return { articles: found };
-      } catch {}
-    }
-  } catch {}
-
-  // ---- Strategy B: DOM heading + container ----
-  const headings = [...document.querySelectorAll("h1,h2,h3,h4,h5,h6,[role='heading']")];
-  let header = headings.find((h) => SECTION_RE.test(h.textContent));
-
-  // Broaden: any element whose direct text matches
-  if (!header) {
-    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
-    while (walker.nextNode()) {
-      const el = walker.currentNode;
-      const direct = [...el.childNodes]
-        .filter((n) => n.nodeType === 3)
-        .map((n) => n.textContent)
-        .join("");
-      if (SECTION_RE.test(direct)) { header = el; break; }
-    }
+  // We navigate directly to the section URL, so the whole page is
+  // Business & Finance — just extract all article links from the body.
+  const links = document.querySelectorAll("a[href]");
+  const out = [];
+  const seen = new Set();
+  for (const a of links) {
+    const href = a.href;
+    if (!ARTICLE_URL_RE.test(href)) continue;
+    if (seen.has(href)) continue;
+    seen.add(href);
+    const title = a.textContent.trim().replace(/\s+/g, " ");
+    if (title.length < 5 || title.length > 400) continue;
+    out.push({ title, url: href });
   }
-
-  if (!header) {
-    return {
-      error: "Could not find the Business & Finance section on the print edition page.",
-      sections: headings.map((h) => h.textContent.trim()).filter((t) => t.length > 2 && t.length < 120),
-    };
-  }
-
-  // Walk up to find a meaningful container
-  let container = header.closest("section, [data-module-zone], [class*='section'], [class*='Section']");
-  if (!container) container = header.parentElement;
-
-  // If the container has very few links, try one level higher
-  for (let i = 0; i < 3; i++) {
-    if (container.querySelectorAll("a[href]").length >= 2) break;
-    if (container.parentElement && container.parentElement !== document.body) {
-      container = container.parentElement;
-    }
-  }
-
-  const articles = extractLinksFromContainer(container);
-
-  // ---- Strategy C: between-headings fallback ----
-  if (articles.length === 0) {
-    const headerTag = header.tagName;
-    const allSameLevel = [...document.querySelectorAll(headerTag)];
-    const idx = allSameLevel.indexOf(header);
-    const nextHeader = idx >= 0 && idx + 1 < allSameLevel.length ? allSameLevel[idx + 1] : null;
-
-    const range = document.createRange();
-    range.setStartAfter(header);
-    if (nextHeader) range.setEndBefore(nextHeader);
-    else range.selectNodeContents(document.body), range.setStartAfter(header);
-
-    const frag = range.cloneContents();
-    const tempDiv = document.createElement("div");
-    tempDiv.appendChild(frag);
-    articles.push(...extractLinksFromContainer(tempDiv));
-  }
-
-  return { articles };
-
-  // ---- helpers ----
-  function extractLinksFromContainer(el) {
-    const links = el.querySelectorAll("a[href]");
-    const out = [];
-    const seen = new Set();
-    for (const a of links) {
-      const href = a.href;
-      if (!ARTICLE_URL_RE.test(href)) continue;
-      if (seen.has(href)) continue;
-      seen.add(href);
-      const title = a.textContent.trim().replace(/\s+/g, " ");
-      if (title.length < 5 || title.length > 400) continue;
-      out.push({ title, url: href });
-    }
-    return out;
-  }
-
-  function findArticlesInJson(obj, depth) {
-    if (depth === undefined) depth = 0;
-    if (depth > 12 || !obj) return [];
-    if (Array.isArray(obj)) return obj.flatMap((v) => findArticlesInJson(v, depth + 1));
-    if (typeof obj !== "object") return [];
-
-    // Look for a section matching Business & Finance with child articles
-    const name = obj.name || obj.label || obj.sectionName || obj.headline || "";
-    if (SECTION_RE.test(name) && (obj.articles || obj.items || obj.children)) {
-      const list = obj.articles || obj.items || obj.children;
-      if (Array.isArray(list)) {
-        return list
-          .filter((a) => a.url || a.href || a.link)
-          .map((a) => ({
-            title: a.headline || a.title || a.name || "Untitled",
-            url: a.url || a.href || a.link,
-          }));
-      }
-    }
-
-    return Object.values(obj).flatMap((v) => findArticlesInJson(v, depth + 1));
-  }
+  return { articles: out };
 }
 
 // ---------------------------------------------------------------------------
