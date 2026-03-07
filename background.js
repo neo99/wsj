@@ -94,7 +94,7 @@ async function startQueue() {
         state.statusText += "\nSections found on page: " + parsed.sections.join(", ");
       }
       push();
-      await chrome.tabs.remove(tabId);
+      // DEBUG: keep tab open
       return;
     }
 
@@ -104,7 +104,7 @@ async function startQueue() {
       state.phase = "error";
       state.statusText = "No articles found in the Business & Finance section.";
       push();
-      await chrome.tabs.remove(tabId);
+      // DEBUG: keep tab open
       return;
     }
 
@@ -239,6 +239,10 @@ function contentScript_parsePrintEdition() {
 
   const ARTICLE_URL_RE = /wsj\.com\/(articles|business|finance|economy|tech|politics|world|us|lifestyle|style|arts|sports|real-estate|personal-finance)\//;
   const SECTION_RE     = /business\s*[&+]\s*finance|business\s+and\s+finance/i;
+
+  console.log('[WSJ] parsePrintEdition running, URL:', location.href);
+  console.log('[WSJ] all headings:', [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].map(h => h.textContent.trim()).filter(t => t.length > 2 && t.length < 120));
+  console.log('[WSJ] all links count:', document.querySelectorAll('a[href]').length);
 
   // ---- Strategy A: embedded JSON ----
   try {
