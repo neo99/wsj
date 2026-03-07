@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "WSJ Audio Queue — Business & Finance",
+  "version": "1.0.0",
+  "description": "Add all Business & Finance articles from today's WSJ print edition to the audio queue",
+  "permissions": [
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://www.wsj.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  }
+}
