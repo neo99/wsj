@@ -71,7 +71,7 @@ async function startQueue() {
     state.statusText = "Opening Business & Finance section\u2026";
     push();
 
-    const tab = await chrome.tabs.create({ url: printUrl, active: false });
+    const tab = await chrome.tabs.create({ url: printUrl, active: true });
     tabId = tab.id;
     await waitForLoad(tabId);
     await sleep(3000); // let JS hydrate
@@ -127,7 +127,6 @@ async function startQueue() {
         state.phase = "done";
         state.queued = queued;
         push();
-        await chrome.tabs.remove(tabId);
         return;
       }
 
@@ -165,12 +164,11 @@ async function startQueue() {
     state.statusText = `Done — ${queued} of ${articles.length} articles queued.`;
     push();
 
-    await chrome.tabs.remove(tabId);
+    await chrome.tabs.update(tabId, { url: "https://www.wsj.com/audio/queue" });
   } catch (err) {
     state.phase = "error";
     state.statusText = "Unexpected error: " + err.message;
     push();
-    try { if (tabId) await chrome.tabs.remove(tabId); } catch {}
   }
 }
 
